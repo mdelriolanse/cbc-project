@@ -5,4 +5,5 @@ anthropic==0.18.1
 python-multipart==0.0.6
 pytest==7.4.3
 httpx==0.25.2
+tavily-python==0.3.0
 

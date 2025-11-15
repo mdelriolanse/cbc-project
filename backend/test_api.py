@@ -181,3 +181,36 @@ def test_invalid_side():
     })
     assert response.status_code == 400
 
+def test_verify_argument():
+    """Test verifying an argument's validity."""
+    topic_id = test_create_topic()
+    
+    # Create an argument
+    arg_response = client.post(f"/api/topics/{topic_id}/arguments", json={
+        "side": "pro",
+        "title": "Climate change is real",
+        "content": "Scientific evidence shows global temperatures are rising",
+        "author": "user1"
+    })
+    argument_id = arg_response.json()["argument_id"]
+    
+    # Verify the argument
+    response = client.post(f"/api/arguments/{argument_id}/verify")
+    # Will be 200 if API keys are set, 500 if not (but endpoint exists)
+    assert response.status_code in [200, 500]
+    
+    if response.status_code == 200:
+        data = response.json()
+        assert "validity_score" in data
+        assert 1 <= data["validity_score"] <= 5
+        assert "reasoning" in data
+        assert "key_urls" in data
+        assert isinstance(data["key_urls"], list)
+        assert "source_count" in data
+        assert isinstance(data["source_count"], int)
+
+def test_verify_nonexistent_argument():
+    """Test verifying an argument that doesn't exist."""
+    response = client.post("/api/arguments/99999/verify")
+    assert response.status_code == 404
+

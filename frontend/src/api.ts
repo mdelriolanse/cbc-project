@@ -44,6 +44,9 @@ export interface ArgumentResponse {
   sources?: string;
   author: string;
   created_at: string;
+  validity_score?: number | null;
+  validity_reasoning?: string | null;
+  validity_checked_at?: string | null;
 }
 
 export interface TopicDetailResponse {
@@ -64,6 +67,13 @@ export interface SummaryResponse {
   overall_summary: string;
   consensus_view: string;
   timeline_view: Array<{ period: string; description: string }>;
+}
+
+export interface ValidityVerdictResponse {
+  validity_score: number;
+  reasoning: string;
+  key_urls: string[];
+  source_count: number;
 }
 
 // Error handling helper
@@ -168,5 +178,62 @@ export async function generateSummary(topicId: number): Promise<SummaryResponse>
     },
   });
   return handleResponse<SummaryResponse>(response);
+}
+
+/**
+ * Verify a single argument's validity
+ * POST /api/arguments/{argument_id}/verify
+ */
+export async function verifyArgument(argumentId: number): Promise<ValidityVerdictResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/arguments/${argumentId}/verify`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+  return handleResponse<ValidityVerdictResponse>(response);
+}
+
+/**
+ * Verify all arguments for a topic
+ * POST /api/topics/{topic_id}/verify-all
+ */
+export async function verifyAllArguments(topicId: number): Promise<{
+  total_arguments: number;
+  verified: number;
+  failed: number;
+  results: Array<{
+    argument_id: number;
+    title: string;
+    validity_score?: number;
+    status: string;
+    error?: string;
+  }>;
+}> {
+  const response = await fetch(`${API_BASE_URL}/api/topics/${topicId}/verify-all`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+  return handleResponse(response);
+}
+
+/**
+ * Get arguments sorted by validity score
+ * GET /api/topics/{topic_id}/arguments/verified?side=pro|con
+ */
+export async function getArgumentsSortedByValidity(
+  topicId: number,
+  side?: 'pro' | 'con'
+): Promise<ArgumentResponse[]> {
+  const queryParam = side ? `?side=${side}` : '';
+  const response = await fetch(`${API_BASE_URL}/api/topics/${topicId}/arguments/verified${queryParam}`, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+  return handleResponse<ArgumentResponse[]>(response);
 }
 

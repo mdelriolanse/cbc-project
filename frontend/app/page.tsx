@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import { Users, Brain, Scale, Sparkles, ArrowLeft, Plus, X, Loader2 } from 'lucide-react'
+import { Users, Brain, Scale, Sparkles, ArrowLeft, Plus, X, Loader2, CheckCircle2, Star } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { 
   getTopics, 
@@ -12,6 +12,9 @@ import {
   getTopic, 
   createArgument, 
   generateSummary,
+  verifyArgument,
+  verifyAllArguments,
+  getArgumentsSortedByValidity,
   type TopicListItem,
   type TopicDetailResponse,
   type ArgumentCreate
@@ -37,6 +40,8 @@ export default function Home() {
     sources: '',
     side: 'pro'
   })
+  const [sortByValidity, setSortByValidity] = useState(false)
+  const [verifyingArgumentId, setVerifyingArgumentId] = useState<number | null>(null)
 
   const fetchTopics = async () => {
     setLoading(true)
@@ -56,7 +61,22 @@ export default function Home() {
     setLoading(true)
     setError(null)
     try {
-      const data = await getTopic(topicId)
+      let data: TopicDetailResponse
+      if (sortByValidity) {
+        // Fetch sorted by validity
+        const [proArgs, conArgs] = await Promise.all([
+          getArgumentsSortedByValidity(topicId, 'pro'),
+          getArgumentsSortedByValidity(topicId, 'con')
+        ])
+        const topicData = await getTopic(topicId)
+        data = {
+          ...topicData,
+          pro_arguments: proArgs,
+          con_arguments: conArgs
+        }
+      } else {
+        data = await getTopic(topicId)
+      }
       setSelectedTopic(data)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch topic details')
@@ -256,6 +276,50 @@ export default function Home() {
       console.error('Error generating summary:', err)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleVerifyArgument = async (argumentId: number) => {
+    setVerifyingArgumentId(argumentId)
+    setError(null)
+
+    try {
+      await verifyArgument(argumentId)
+      // Refetch topic to get updated validity scores
+      if (selectedTopicId) {
+        await fetchTopicDetails(selectedTopicId)
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to verify argument')
+      console.error('Error verifying argument:', err)
+    } finally {
+      setVerifyingArgumentId(null)
+    }
+  }
+
+  const handleVerifyAll = async () => {
+    if (!selectedTopicId) return
+
+    setLoading(true)
+    setError(null)
+
+    try {
+      await verifyAllArguments(selectedTopicId)
+      // Refetch topic to get updated validity scores
+      await fetchTopicDetails(selectedTopicId)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to verify all arguments')
+      console.error('Error verifying all arguments:', err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleToggleSortByValidity = async () => {
+    setSortByValidity(!sortByValidity)
+    if (selectedTopicId) {
+      // Refetch with new sort order
+      await fetchTopicDetails(selectedTopicId)
     }
   }
 
@@ -618,7 +682,39 @@ export default function Home() {
             <div className="flex items-center gap-3 mb-4">
               <span className="font-mono text-sm text-gray-500">TOPIC</span>
             </div>
-            <h1 className="text-4xl md:text-5xl font-bold mb-6">{selectedTopic.question}</h1>
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+              <h1 className="text-4xl md:text-5xl font-bold">{selectedTopic.question}</h1>
+              <div className="flex gap-2 flex-wrap">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleToggleSortByValidity}
+                  className="border-purple-500/30 hover:bg-purple-950/30 text-purple-400"
+                >
+                  <Star className="w-4 h-4 mr-1" />
+                  {sortByValidity ? 'Sort by Date' : 'Sort by Validity'}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleVerifyAll}
+                  disabled={loading || (selectedTopic.pro_arguments.length === 0 && selectedTopic.con_arguments.length === 0)}
+                  className="border-blue-500/30 hover:bg-blue-950/30 text-blue-400"
+                >
+                  {loading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                      Verifying...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-4 h-4 mr-1" />
+                      Verify All
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
           </div>
 
           <div className="grid md:grid-cols-2 gap-6 mb-8">
@@ -692,13 +788,57 @@ export default function Home() {
               ) : (
                 selectedTopic.pro_arguments.map((arg) => (
                   <Card key={arg.id} className="bg-[#0f1f0f] border-green-900/30 p-6 hover:border-green-500/50 transition-colors">
-                    <h5 className="text-green-400 font-semibold mb-2">{arg.title}</h5>
-                    <p className="text-gray-300 mb-3">{arg.content}</p>
-                    <div className="flex justify-between items-center">
-                      {arg.sources && (
-                        <span className="text-xs text-gray-500 font-mono">Sources: {arg.sources}</span>
+                    <div className="flex items-start justify-between mb-2">
+                      <h5 className="text-green-400 font-semibold flex-1">{arg.title}</h5>
+                      {arg.validity_score !== null && arg.validity_score !== undefined && (
+                        <div className="flex items-center gap-1 ml-2">
+                          {[...Array(5)].map((_, i) => (
+                            <Star
+                              key={i}
+                              className={`w-4 h-4 ${
+                                i < arg.validity_score!
+                                  ? 'fill-yellow-400 text-yellow-400'
+                                  : 'text-gray-600'
+                              }`}
+                            />
+                          ))}
+                          <span className="text-xs text-gray-400 ml-1">{arg.validity_score}/5</span>
+                        </div>
                       )}
-                      <span className="text-xs text-gray-500 font-mono ml-auto">by {arg.author}</span>
+                    </div>
+                    <p className="text-gray-300 mb-3">{arg.content}</p>
+                    {arg.validity_reasoning && (
+                      <div className="mb-3 p-3 bg-black/30 rounded border border-yellow-500/20">
+                        <p className="text-xs text-yellow-300 font-semibold mb-1">Fact-Check:</p>
+                        <p className="text-xs text-gray-400">{arg.validity_reasoning}</p>
+                      </div>
+                    )}
+                    <div className="flex justify-between items-center mt-3">
+                      <div className="flex gap-2">
+                        {arg.sources && (
+                          <span className="text-xs text-gray-500 font-mono">Sources: {arg.sources}</span>
+                        )}
+                        <span className="text-xs text-gray-500 font-mono">by {arg.author}</span>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => handleVerifyArgument(arg.id)}
+                        disabled={verifyingArgumentId === arg.id}
+                        className="text-green-400 hover:text-green-300 hover:bg-green-950/30 h-auto py-1 text-xs"
+                      >
+                        {verifyingArgumentId === arg.id ? (
+                          <>
+                            <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                            Verifying...
+                          </>
+                        ) : (
+                          <>
+                            <CheckCircle2 className="w-3 h-3 mr-1" />
+                            Verify
+                          </>
+                        )}
+                      </Button>
                     </div>
                   </Card>
                 ))
@@ -775,13 +915,57 @@ export default function Home() {
               ) : (
                 selectedTopic.con_arguments.map((arg) => (
                   <Card key={arg.id} className="bg-[#1f0f0f] border-rose-900/30 p-6 hover:border-rose-500/50 transition-colors">
-                    <h5 className="text-rose-400 font-semibold mb-2">{arg.title}</h5>
-                    <p className="text-gray-300 mb-3">{arg.content}</p>
-                    <div className="flex justify-between items-center">
-                      {arg.sources && (
-                        <span className="text-xs text-gray-500 font-mono">Sources: {arg.sources}</span>
+                    <div className="flex items-start justify-between mb-2">
+                      <h5 className="text-rose-400 font-semibold flex-1">{arg.title}</h5>
+                      {arg.validity_score !== null && arg.validity_score !== undefined && (
+                        <div className="flex items-center gap-1 ml-2">
+                          {[...Array(5)].map((_, i) => (
+                            <Star
+                              key={i}
+                              className={`w-4 h-4 ${
+                                i < arg.validity_score!
+                                  ? 'fill-yellow-400 text-yellow-400'
+                                  : 'text-gray-600'
+                              }`}
+                            />
+                          ))}
+                          <span className="text-xs text-gray-400 ml-1">{arg.validity_score}/5</span>
+                        </div>
                       )}
-                      <span className="text-xs text-gray-500 font-mono ml-auto">by {arg.author}</span>
+                    </div>
+                    <p className="text-gray-300 mb-3">{arg.content}</p>
+                    {arg.validity_reasoning && (
+                      <div className="mb-3 p-3 bg-black/30 rounded border border-yellow-500/20">
+                        <p className="text-xs text-yellow-300 font-semibold mb-1">Fact-Check:</p>
+                        <p className="text-xs text-gray-400">{arg.validity_reasoning}</p>
+                      </div>
+                    )}
+                    <div className="flex justify-between items-center mt-3">
+                      <div className="flex gap-2">
+                        {arg.sources && (
+                          <span className="text-xs text-gray-500 font-mono">Sources: {arg.sources}</span>
+                        )}
+                        <span className="text-xs text-gray-500 font-mono">by {arg.author}</span>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => handleVerifyArgument(arg.id)}
+                        disabled={verifyingArgumentId === arg.id}
+                        className="text-rose-400 hover:text-rose-300 hover:bg-rose-950/30 h-auto py-1 text-xs"
+                      >
+                        {verifyingArgumentId === arg.id ? (
+                          <>
+                            <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                            Verifying...
+                          </>
+                        ) : (
+                          <>
+                            <CheckCircle2 className="w-3 h-3 mr-1" />
+                            Verify
+                          </>
+                        )}
+                      </Button>
                     </div>
                   </Card>
                 ))

@@ -68,3 +68,18 @@ class SummaryResponse(BaseModel):
     consensus_view: str
     timeline_view: List[dict]
 
+# Fact-checking models
+class ValidityVerdictResponse(BaseModel):
+    validity_score: int
+    reasoning: str
+    key_urls: List[str]
+    source_count: int
+
+class ArgumentWithValidityResponse(ArgumentResponse):
+    validity_score: Optional[int] = None
+    validity_reasoning: Optional[str] = None
+    validity_checked_at: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+

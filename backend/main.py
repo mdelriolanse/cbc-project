@@ -1,10 +1,12 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import database
-from routes import topics, arguments, summaries
+from routes import topics, arguments, summaries, fact_checking
 
 # Initialize database
 database.init_db()
+# Run migration to add validity columns
+database.migrate_add_validity_columns()
 
 # Create FastAPI app
 app = FastAPI(title="Debate Platform API", version="1.0.0")
@@ -22,6 +24,7 @@ app.add_middleware(
 app.include_router(topics.router)
 app.include_router(arguments.router)
 app.include_router(summaries.router)
+app.include_router(fact_checking.router)
 
 @app.get("/")
 async def root():
