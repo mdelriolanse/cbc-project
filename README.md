@@ -27,8 +27,6 @@ A fact-checked debate platform that uses Claude AI to synthesize arguments, veri
 - Tailwind CSS
 - Shadcn/ui components
 
-See [TECHNICAL_OVERVIEW.md](./TECHNICAL_OVERVIEW.md) for detailed technical documentation.
-
 ## Quick Start
 
 ### Prerequisites
