@@ -96,17 +96,22 @@ def get_all_topics() -> list:
     return [dict(row) for row in rows]
 
 def get_topic_with_arguments(topic_id: int) -> Optional[dict]:
-    """Get a topic with its arguments."""
+    """Get a topic with its arguments, sorted by validity score (highest first)."""
     topic = get_topic(topic_id)
     if not topic:
         return None
     
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute(
-        "SELECT * FROM arguments WHERE topic_id = ? ORDER BY created_at ASC",
-        (topic_id,)
-    )
+    # Sort by validity_score DESC (nulls last), then created_at DESC
+    cursor.execute("""
+        SELECT * FROM arguments 
+        WHERE topic_id = ? 
+        ORDER BY 
+            CASE WHEN validity_score IS NULL THEN 1 ELSE 0 END,
+            validity_score DESC,
+            created_at DESC
+    """, (topic_id,))
     rows = cursor.fetchall()
     conn.close()
     

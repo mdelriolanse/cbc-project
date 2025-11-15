@@ -1,5 +1,7 @@
 from fastapi import APIRouter, HTTPException
 import database
+import fact_checker
+import claude_service
 from models import TopicCreate, TopicResponse, TopicListItem, TopicDetailResponse
 
 router = APIRouter(prefix="/api/topics", tags=["topics"])
@@ -33,10 +35,74 @@ async def get_topics():
 
 @router.get("/{topic_id}", response_model=TopicDetailResponse)
 async def get_topic(topic_id: int):
-    """Get a topic with its arguments and analysis."""
+    """
+    Get a topic with its arguments and analysis.
+    Automatically verifies arguments and generates Claude analysis if missing.
+    Arguments are always sorted by validity score (highest first).
+    """
     topic_data = database.get_topic_with_arguments(topic_id)
     if not topic_data:
         raise HTTPException(status_code=404, detail=f"Topic with id {topic_id} not found")
+    
+    # Check if any arguments need verification
+    all_arguments = topic_data['pro_arguments'] + topic_data['con_arguments']
+    needs_verification = any(
+        arg.get('validity_score') is None for arg in all_arguments
+    )
+    
+    # Auto-verify all arguments if needed
+    if needs_verification and all_arguments:
+        for arg in all_arguments:
+            if arg.get('validity_score') is None:
+                try:
+                    verdict = fact_checker.verify_argument(
+                        title=arg['title'],
+                        content=arg['content']
+                    )
+                    database.update_argument_validity(
+                        argument_id=arg['id'],
+                        validity_score=verdict.validity_score,
+                        validity_reasoning=verdict.reasoning
+                    )
+                except Exception:
+                    # Continue even if verification fails for one argument
+                    pass
+        
+        # Refetch topic data with updated validity scores
+        topic_data = database.get_topic_with_arguments(topic_id)
+    
+    # Check if Claude analysis is missing
+    needs_analysis = (
+        not topic_data.get('overall_summary') or
+        not topic_data.get('consensus_view') or
+        not topic_data.get('timeline_view')
+    )
+    
+    # Auto-generate Claude analysis if needed
+    if needs_analysis:
+        pro_args = topic_data['pro_arguments']
+        con_args = topic_data['con_arguments']
+        
+        if pro_args and con_args:
+            try:
+                result = claude_service.generate_summary(
+                    question=topic_data['question'],
+                    pro_arguments=pro_args,
+                    con_arguments=con_args
+                )
+                database.update_topic_analysis(
+                    topic_id=topic_id,
+                    overall_summary=result['overall_summary'],
+                    consensus_view=result['consensus_view'],
+                    timeline_view=result['timeline_view']
+                )
+                # Update topic_data with new analysis
+                topic_data['overall_summary'] = result['overall_summary']
+                topic_data['consensus_view'] = result['consensus_view']
+                topic_data['timeline_view'] = result['timeline_view']
+            except Exception:
+                # Continue even if analysis generation fails
+                pass
     
     return TopicDetailResponse(**topic_data)
 

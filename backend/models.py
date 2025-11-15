@@ -44,6 +44,9 @@ class ArgumentResponse(BaseModel):
     sources: Optional[str] = None
     author: str
     created_at: str
+    validity_score: Optional[int] = None
+    validity_reasoning: Optional[str] = None
+    validity_checked_at: Optional[str] = None
 
     class Config:
         from_attributes = True

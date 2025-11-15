@@ -11,10 +11,7 @@ import {
   createTopic, 
   getTopic, 
   createArgument, 
-  generateSummary,
   verifyArgument,
-  verifyAllArguments,
-  getArgumentsSortedByValidity,
   type TopicListItem,
   type TopicDetailResponse,
   type ArgumentCreate
@@ -40,7 +37,6 @@ export default function Home() {
     sources: '',
     side: 'pro'
   })
-  const [sortByValidity, setSortByValidity] = useState(false)
   const [verifyingArgumentId, setVerifyingArgumentId] = useState<number | null>(null)
 
   const fetchTopics = async () => {
@@ -61,22 +57,8 @@ export default function Home() {
     setLoading(true)
     setError(null)
     try {
-      let data: TopicDetailResponse
-      if (sortByValidity) {
-        // Fetch sorted by validity
-        const [proArgs, conArgs] = await Promise.all([
-          getArgumentsSortedByValidity(topicId, 'pro'),
-          getArgumentsSortedByValidity(topicId, 'con')
-        ])
-        const topicData = await getTopic(topicId)
-        data = {
-          ...topicData,
-          pro_arguments: proArgs,
-          con_arguments: conArgs
-        }
-      } else {
-        data = await getTopic(topicId)
-      }
+      // Backend now automatically verifies and sorts by validity
+      const data = await getTopic(topicId)
       setSelectedTopic(data)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch topic details')
@@ -261,24 +243,6 @@ export default function Home() {
     }
   }
 
-  const handleGenerateSummary = async () => {
-    if (!selectedTopicId) return
-
-    setLoading(true)
-    setError(null)
-
-    try {
-      await generateSummary(selectedTopicId)
-      // Refetch topic to get updated analysis
-      await fetchTopicDetails(selectedTopicId)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to generate summary')
-      console.error('Error generating summary:', err)
-    } finally {
-      setLoading(false)
-    }
-  }
-
   const handleVerifyArgument = async (argumentId: number) => {
     setVerifyingArgumentId(argumentId)
     setError(null)
@@ -297,31 +261,6 @@ export default function Home() {
     }
   }
 
-  const handleVerifyAll = async () => {
-    if (!selectedTopicId) return
-
-    setLoading(true)
-    setError(null)
-
-    try {
-      await verifyAllArguments(selectedTopicId)
-      // Refetch topic to get updated validity scores
-      await fetchTopicDetails(selectedTopicId)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to verify all arguments')
-      console.error('Error verifying all arguments:', err)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const handleToggleSortByValidity = async () => {
-    setSortByValidity(!sortByValidity)
-    if (selectedTopicId) {
-      // Refetch with new sort order
-      await fetchTopicDetails(selectedTopicId)
-    }
-  }
 
   if (view === 'createDebate') {
     return (
@@ -631,8 +570,10 @@ export default function Home() {
   if (view === 'topic') {
     if (loading && !selectedTopic) {
       return (
-        <div className="min-h-screen bg-black text-white flex items-center justify-center">
+        <div className="min-h-screen bg-black text-white flex flex-col items-center justify-center gap-4">
           <Loader2 className="w-8 h-8 animate-spin text-purple-500" />
+          <p className="text-gray-400 text-lg">Verifying arguments and generating analysis...</p>
+          <p className="text-gray-500 text-sm">This may take 30-60 seconds on first load</p>
         </div>
       )
     }
@@ -682,38 +623,9 @@ export default function Home() {
             <div className="flex items-center gap-3 mb-4">
               <span className="font-mono text-sm text-gray-500">TOPIC</span>
             </div>
-            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div>
               <h1 className="text-4xl md:text-5xl font-bold">{selectedTopic.question}</h1>
-              <div className="flex gap-2 flex-wrap">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={handleToggleSortByValidity}
-                  className="border-purple-500/30 hover:bg-purple-950/30 text-purple-400"
-                >
-                  <Star className="w-4 h-4 mr-1" />
-                  {sortByValidity ? 'Sort by Date' : 'Sort by Validity'}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={handleVerifyAll}
-                  disabled={loading || (selectedTopic.pro_arguments.length === 0 && selectedTopic.con_arguments.length === 0)}
-                  className="border-blue-500/30 hover:bg-blue-950/30 text-blue-400"
-                >
-                  {loading ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-1 animate-spin" />
-                      Verifying...
-                    </>
-                  ) : (
-                    <>
-                      <CheckCircle2 className="w-4 h-4 mr-1" />
-                      Verify All
-                    </>
-                  )}
-                </Button>
-              </div>
+              <p className="text-sm text-gray-500 mt-2">Arguments sorted by validity (highest quality first)</p>
             </div>
           </div>
 
@@ -786,25 +698,35 @@ export default function Home() {
                   <p className="text-gray-500 text-sm">No pro arguments yet</p>
                 </Card>
               ) : (
-                selectedTopic.pro_arguments.map((arg) => (
+                selectedTopic.pro_arguments.map((arg) => {
+                  // Debug: log argument data
+                  if (process.env.NODE_ENV === 'development') {
+                    console.log('Pro argument:', arg.id, 'validity_score:', arg.validity_score, 'validity_reasoning:', arg.validity_reasoning)
+                  }
+                  
+                  const validityScore = typeof arg.validity_score === 'number' ? arg.validity_score : 
+                                       arg.validity_score !== null && arg.validity_score !== undefined ? 
+                                       parseInt(String(arg.validity_score)) : null
+                  
+                  return (
                   <Card key={arg.id} className="bg-[#0f1f0f] border-green-900/30 p-6 hover:border-green-500/50 transition-colors">
                     <div className="flex items-start justify-between mb-2">
                       <h5 className="text-green-400 font-semibold flex-1">{arg.title}</h5>
-                      {arg.validity_score !== null && arg.validity_score !== undefined && (
-                        <div className="flex items-center gap-1 ml-2">
+                      {validityScore !== null && validityScore !== undefined && validityScore > 0 ? (
+                        <div className="flex items-center gap-0.5 ml-2 flex-shrink-0 bg-yellow-950/20 px-2 py-1 rounded border border-yellow-500/30">
                           {[...Array(5)].map((_, i) => (
                             <Star
                               key={i}
                               className={`w-4 h-4 ${
-                                i < arg.validity_score!
+                                i < validityScore
                                   ? 'fill-yellow-400 text-yellow-400'
-                                  : 'text-gray-600'
+                                  : 'text-gray-500 fill-transparent'
                               }`}
                             />
                           ))}
-                          <span className="text-xs text-gray-400 ml-1">{arg.validity_score}/5</span>
+                          <span className="text-xs text-yellow-400 ml-1.5 font-semibold">{validityScore}/5</span>
                         </div>
-                      )}
+                      ) : null}
                     </div>
                     <p className="text-gray-300 mb-3">{arg.content}</p>
                     {arg.validity_reasoning && (
@@ -841,7 +763,8 @@ export default function Home() {
                       </Button>
                     </div>
                   </Card>
-                ))
+                  )
+                })
               )}
             </div>
 
@@ -913,25 +836,35 @@ export default function Home() {
                   <p className="text-gray-500 text-sm">No con arguments yet</p>
                 </Card>
               ) : (
-                selectedTopic.con_arguments.map((arg) => (
+                selectedTopic.con_arguments.map((arg) => {
+                  // Debug: log argument data
+                  if (process.env.NODE_ENV === 'development') {
+                    console.log('Con argument:', arg.id, 'validity_score:', arg.validity_score, 'validity_reasoning:', arg.validity_reasoning)
+                  }
+                  
+                  const validityScore = typeof arg.validity_score === 'number' ? arg.validity_score : 
+                                       arg.validity_score !== null && arg.validity_score !== undefined ? 
+                                       parseInt(String(arg.validity_score)) : null
+                  
+                  return (
                   <Card key={arg.id} className="bg-[#1f0f0f] border-rose-900/30 p-6 hover:border-rose-500/50 transition-colors">
                     <div className="flex items-start justify-between mb-2">
                       <h5 className="text-rose-400 font-semibold flex-1">{arg.title}</h5>
-                      {arg.validity_score !== null && arg.validity_score !== undefined && (
-                        <div className="flex items-center gap-1 ml-2">
+                      {validityScore !== null && validityScore !== undefined && validityScore > 0 ? (
+                        <div className="flex items-center gap-0.5 ml-2 flex-shrink-0 bg-yellow-950/20 px-2 py-1 rounded border border-yellow-500/30">
                           {[...Array(5)].map((_, i) => (
                             <Star
                               key={i}
                               className={`w-4 h-4 ${
-                                i < arg.validity_score!
+                                i < validityScore
                                   ? 'fill-yellow-400 text-yellow-400'
-                                  : 'text-gray-600'
+                                  : 'text-gray-500 fill-transparent'
                               }`}
                             />
                           ))}
-                          <span className="text-xs text-gray-400 ml-1">{arg.validity_score}/5</span>
+                          <span className="text-xs text-yellow-400 ml-1.5 font-semibold">{validityScore}/5</span>
                         </div>
-                      )}
+                      ) : null}
                     </div>
                     <p className="text-gray-300 mb-3">{arg.content}</p>
                     {arg.validity_reasoning && (
@@ -968,7 +901,8 @@ export default function Home() {
                       </Button>
                     </div>
                   </Card>
-                ))
+                  )
+                })
               )}
             </div>
           </div>
@@ -1013,47 +947,14 @@ export default function Home() {
                     </div>
                   </div>
                 )}
-                <Button 
-                  variant="outline" 
-                  className="border-purple-500/30 hover:bg-purple-950/30 text-purple-400"
-                  onClick={handleGenerateSummary}
-                  disabled={loading || selectedTopic.pro_arguments.length === 0 || selectedTopic.con_arguments.length === 0}
-                >
-                  {loading ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Regenerating...
-                    </>
-                  ) : (
-                    'Regenerate Analysis'
-                  )}
-                </Button>
               </div>
             ) : (
-              <div className="space-y-4">
+              <div>
                 <p className="text-gray-400">
                   {selectedTopic.pro_arguments.length === 0 || selectedTopic.con_arguments.length === 0
                     ? 'Add at least one pro and one con argument to generate analysis'
-                    : 'Click the button below to generate AI analysis'}
+                    : 'Analysis will be generated automatically...'}
                 </p>
-                <Button 
-                  variant="outline" 
-                  className="border-purple-500/30 hover:bg-purple-950/30 text-purple-400"
-                  onClick={handleGenerateSummary}
-                  disabled={loading || selectedTopic.pro_arguments.length === 0 || selectedTopic.con_arguments.length === 0}
-                >
-                  {loading ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Generating...
-                    </>
-                  ) : (
-                    <>
-                      <Brain className="w-4 h-4 mr-2" />
-                      Generate Analysis
-                    </>
-                  )}
-                </Button>
               </div>
             )}
           </Card>
