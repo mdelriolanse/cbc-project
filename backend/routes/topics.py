@@ -62,7 +62,8 @@ async def get_topic(topic_id: int):
                     database.update_argument_validity(
                         argument_id=arg['id'],
                         validity_score=verdict.validity_score,
-                        validity_reasoning=verdict.reasoning
+                        validity_reasoning=verdict.reasoning,
+                        key_urls=verdict.key_urls
                     )
                 except Exception:
                     # Continue even if verification fails for one argument

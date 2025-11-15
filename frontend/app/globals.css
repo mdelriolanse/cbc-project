@@ -81,6 +81,7 @@
 @theme inline {
   --font-sans: 'Geist', 'Geist Fallback';
   --font-mono: 'Geist Mono', 'Geist Mono Fallback';
+  --font-telka-extended: var(--font-telka-extended), 'Bebas Neue', sans-serif;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -185,4 +186,8 @@
 
 .animate-slide-left {
   animation: slide-left 2s ease-in-out infinite;
+}
+
+.font-telka-extended {
+  font-family: var(--font-telka-extended), 'Bebas Neue', sans-serif;
 }

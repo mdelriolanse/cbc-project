@@ -47,6 +47,7 @@ export interface ArgumentResponse {
   validity_score?: number | null;
   validity_reasoning?: string | null;
   validity_checked_at?: string | null;
+  key_urls?: string[] | null;
 }
 
 export interface TopicDetailResponse {

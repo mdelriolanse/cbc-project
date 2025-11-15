@@ -1,5 +1,6 @@
 import os
 import json
+import re
 from typing import Dict, List, Optional
 from anthropic import Anthropic
 from tavily import TavilyClient
@@ -176,14 +177,18 @@ Consider BOTH the number of sources AND their quality (relevance scores).
 Average relevance score of sources: {avg_score:.3f}
 Number of sources found: {source_count}
 
-Return a JSON object with this exact structure:
+Return a JSON object with this exact structure. Make sure all strings are properly escaped:
 {{
     "validity_score": <1-5>,
-    "reasoning": "<2-3 sentences explaining the score>",
-    "key_urls": ["<top 3 most relevant URLs>"]
+    "reasoning": "<2-3 sentences explaining the score. Escape any quotes with backslash.>",
+    "key_urls": ["<url1>", "<url2>", "<url3>"]
 }}
 
-Only include URLs from the search results above."""
+IMPORTANT: 
+- Return ONLY valid JSON, no markdown formatting or extra text
+- Escape all quotes in the reasoning field with backslashes
+- Include exactly 3 URLs or fewer from the search results above
+- Ensure all URLs are properly quoted and escaped"""
 
     try:
         message = claude_client.messages.create(
@@ -199,13 +204,98 @@ Only include URLs from the search results above."""
         
         response_text = message.content[0].text.strip()
         
-        # Extract JSON from response
-        if "```json" in response_text:
-            response_text = response_text.split("```json")[1].split("```")[0].strip()
-        elif "```" in response_text:
-            response_text = response_text.split("```")[1].split("```")[0].strip()
+        # Extract JSON from response - handle multiple formats
+        json_text = None
         
-        result = json.loads(response_text)
+        # Try to find JSON in code blocks first
+        json_block_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', response_text, re.DOTALL)
+        if json_block_match:
+            json_text = json_block_match.group(1)
+        else:
+            # Try to find JSON object by matching braces
+            # Find the first { and match to the last }
+            start_idx = response_text.find('{')
+            if start_idx != -1:
+                brace_count = 0
+                end_idx = start_idx
+                for i in range(start_idx, len(response_text)):
+                    if response_text[i] == '{':
+                        brace_count += 1
+                    elif response_text[i] == '}':
+                        brace_count -= 1
+                        if brace_count == 0:
+                            end_idx = i + 1
+                            break
+                if end_idx > start_idx:
+                    json_text = response_text[start_idx:end_idx]
+            else:
+                # Fallback: use entire response
+                json_text = response_text
+        
+        # Clean up the JSON text
+        if json_text:
+            json_text = json_text.strip()
+        
+        # Parse JSON with error handling
+        result = None
+        try:
+            result = json.loads(json_text)
+        except json.JSONDecodeError:
+            # If JSON parsing fails, extract fields manually using regex
+            # This handles cases where Claude returns malformed JSON (e.g., unescaped quotes)
+            validity_match = re.search(r'"validity_score"\s*:\s*(\d+)', json_text)
+            
+            validity_score = int(validity_match.group(1)) if validity_match else 3
+            if validity_score < 1 or validity_score > 5:
+                validity_score = 3
+            
+            # Extract reasoning - handle unescaped quotes by finding the field value manually
+            reasoning = "Unable to parse reasoning from response"
+            reasoning_start = json_text.find('"reasoning"')
+            if reasoning_start != -1:
+                # Find the colon after "reasoning"
+                colon_pos = json_text.find(':', reasoning_start)
+                if colon_pos != -1:
+                    # Find the opening quote
+                    quote_start = json_text.find('"', colon_pos)
+                    if quote_start != -1:
+                        # Parse character by character to find the closing quote
+                        # Skip escaped quotes
+                        i = quote_start + 1
+                        reasoning_end = -1
+                        while i < len(json_text):
+                            if json_text[i] == '\\' and i + 1 < len(json_text):
+                                i += 2  # Skip escaped character
+                                continue
+                            elif json_text[i] == '"':
+                                # Check if this is followed by comma or closing brace
+                                j = i + 1
+                                while j < len(json_text) and json_text[j] in ' \t\n\r':
+                                    j += 1
+                                if j < len(json_text) and json_text[j] in ',}':
+                                    reasoning_end = i
+                                    break
+                            i += 1
+                        
+                        if reasoning_end > quote_start:
+                            reasoning = json_text[quote_start + 1:reasoning_end]
+                            # Unescape common escape sequences
+                            reasoning = reasoning.replace('\\"', '"').replace('\\n', '\n').replace('\\t', '\t').replace('\\\\', '\\')
+            
+            # Extract URLs from the array
+            urls_match = re.search(r'"key_urls"\s*:\s*\[(.*?)\]', json_text, re.DOTALL)
+            key_urls = []
+            if urls_match:
+                urls_text = urls_match.group(1)
+                # Extract URLs, handling escaped quotes
+                url_matches = re.findall(r'"((?:[^"\\]|\\.)*)"', urls_text)
+                key_urls = [url.replace('\\"', '"').replace('\\\\', '\\') for url in url_matches if url][:3]
+            
+            result = {
+                'validity_score': validity_score,
+                'reasoning': reasoning,
+                'key_urls': key_urls
+            }
         
         # Validate and create verdict
         validity_score = int(result.get('validity_score', 3))
@@ -216,11 +306,20 @@ Only include URLs from the search results above."""
         key_urls = result.get('key_urls', [])
         if isinstance(key_urls, str):
             key_urls = [key_urls]
-        key_urls = key_urls[:3]  # Limit to top 3
+        elif not isinstance(key_urls, list):
+            key_urls = []
+        # Filter out empty strings and limit to 3
+        key_urls = [url for url in key_urls if url and isinstance(url, str)][:3]
+        
+        # Clean reasoning text
+        reasoning = result.get('reasoning', 'No reasoning provided')
+        if isinstance(reasoning, str):
+            # Remove any extra quotes or formatting
+            reasoning = reasoning.strip().strip('"').strip("'")
         
         verdict = ValidityVerdict(
             validity_score=validity_score,
-            reasoning=result.get('reasoning', 'No reasoning provided'),
+            reasoning=reasoning,
             key_urls=key_urls,
             source_count=source_count
         )

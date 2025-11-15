@@ -39,6 +39,15 @@ export default function Home() {
   })
   const [verifyingArgumentId, setVerifyingArgumentId] = useState<number | null>(null)
 
+  // Helper function to extract domain from URL
+  const getDomain = (url: string): string => {
+    try {
+      return new URL(url).hostname.replace('www.', '')
+    } catch {
+      return url
+    }
+  }
+
   const fetchTopics = async () => {
     setLoading(true)
     setError(null)
@@ -735,6 +744,30 @@ export default function Home() {
                         <p className="text-xs text-gray-400">{arg.validity_reasoning}</p>
                       </div>
                     )}
+                    {arg.key_urls && arg.key_urls.length > 0 && arg.key_urls.length <= 3 && (
+                      <div className="mt-3 pt-3 border-t border-gray-700/50">
+                        <p className="text-xs text-gray-500 mb-2">Sources:</p>
+                        <div className="flex flex-wrap gap-2">
+                          {arg.key_urls.slice(0, 3).map((url, idx) => (
+                            <a
+                              key={idx}
+                              href={url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-300 transition-colors"
+                              title={url}
+                            >
+                              <img
+                                src={`https://www.google.com/s2/favicons?domain=${getDomain(url)}&sz=16`}
+                                alt=""
+                                className="w-4 h-4"
+                              />
+                              <span className="truncate max-w-[150px]">{getDomain(url)}</span>
+                            </a>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                     <div className="flex justify-between items-center mt-3">
                       <div className="flex gap-2">
                         {arg.sources && (
@@ -873,6 +906,30 @@ export default function Home() {
                         <p className="text-xs text-gray-400">{arg.validity_reasoning}</p>
                       </div>
                     )}
+                    {arg.key_urls && arg.key_urls.length > 0 && arg.key_urls.length <= 3 && (
+                      <div className="mt-3 pt-3 border-t border-gray-700/50">
+                        <p className="text-xs text-gray-500 mb-2">Sources:</p>
+                        <div className="flex flex-wrap gap-2">
+                          {arg.key_urls.slice(0, 3).map((url, idx) => (
+                            <a
+                              key={idx}
+                              href={url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-300 transition-colors"
+                              title={url}
+                            >
+                              <img
+                                src={`https://www.google.com/s2/favicons?domain=${getDomain(url)}&sz=16`}
+                                alt=""
+                                className="w-4 h-4"
+                              />
+                              <span className="truncate max-w-[150px]">{getDomain(url)}</span>
+                            </a>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                     <div className="flex justify-between items-center mt-3">
                       <div className="flex gap-2">
                         {arg.sources && (
@@ -969,15 +1026,15 @@ export default function Home() {
       <div className="fixed inset-0 bg-grid-pattern opacity-20 pointer-events-none" />
       
       {/* Hero Section */}
-      <section className="relative px-6 py-20 md:py-32 max-w-7xl mx-auto">
+      <section className="relative px-6 pt-8 md:pt-12 pb-20 md:pb-32 max-w-7xl mx-auto">
         <div className="text-center space-y-8">
           {/* Animated Visualization */}
-          <div className="mb-12 flex justify-center">
+          <div className="mb-6 flex justify-center">
             <div className="relative w-full max-w-2xl h-32">
               <div className="absolute inset-0 flex items-center justify-center">
-                <div className="w-16 h-16 rounded-full bg-gradient-to-br from-purple-600 to-purple-700 flex items-center justify-center animate-pulse-slow">
-                  <Sparkles className="w-8 h-8 text-white" />
-                </div>
+                <h1 className="text-5xl md:text-7xl font-telka-extended tracking-wide animate-pulse-slow">
+                  Debately
+                </h1>
               </div>
               {/* Pro side */}
               <div className="absolute left-0 top-1/2 -translate-y-1/2 flex gap-2 animate-slide-right">
@@ -992,9 +1049,9 @@ export default function Home() {
             </div>
           </div>
 
-          <h1 className="text-5xl md:text-7xl font-bold tracking-tight text-balance">
+          <h2 className="text-2xl md:text-3xl font-bold tracking-tight text-balance">
             Every debate. Both sides.
-          </h1>
+          </h2>
           
           <p className="text-xl md:text-2xl text-gray-400 max-w-3xl mx-auto text-pretty">
             Create topics, contribute arguments, let AI synthesize understanding. The resilient platform for structured discourse.
@@ -1173,16 +1230,9 @@ export default function Home() {
               <p className="text-gray-500 text-sm">Build understanding through structured debate</p>
             </div>
             
-            <div className="flex gap-8 text-sm text-gray-400">
-              <a href="#" className="hover:text-white transition-colors">About</a>
-              <a href="#" className="hover:text-white transition-colors">Features</a>
-              <a href="#" className="hover:text-white transition-colors">Pricing</a>
-              <a href="#" className="hover:text-white transition-colors">Contact</a>
+            <div className="text-sm text-gray-500 font-mono">
+              Built for Claude Builders Hackathon 2025
             </div>
-          </div>
-          
-          <div className="text-center mt-8 text-sm text-gray-500 font-mono">
-            Built for Claude Builders Hackathon 2024
           </div>
         </div>
       </footer>

@@ -1,10 +1,15 @@
 import type { Metadata } from 'next'
-import { Geist, Geist_Mono } from 'next/font/google'
+import { Geist, Geist_Mono, Bebas_Neue } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import './globals.css'
 
 const geist = Geist({ subsets: ["latin"] });
 const geistMono = Geist_Mono({ subsets: ["latin"] });
+const telkaExtended = Bebas_Neue({ 
+  weight: '400',
+  subsets: ["latin"],
+  variable: '--font-telka-extended'
+});
 
 export const metadata: Metadata = {
   title: 'Debately - Build Understanding Through Structured Debate',
@@ -36,7 +41,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${geist.className} antialiased`}>
+      <body className={`${geist.className} ${telkaExtended.variable} antialiased`}>
         {children}
         <Analytics />
       </body>

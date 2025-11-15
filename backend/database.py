@@ -1,6 +1,6 @@
 import sqlite3
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
 import json
 
 DATABASE_FILE = "debate_platform.db"
@@ -116,6 +116,16 @@ def get_topic_with_arguments(topic_id: int) -> Optional[dict]:
     conn.close()
     
     arguments = [dict(row) for row in rows]
+    # Parse key_urls JSON for each argument
+    for arg in arguments:
+        if arg.get('key_urls'):
+            try:
+                arg['key_urls'] = json.loads(arg['key_urls'])
+            except (json.JSONDecodeError, TypeError):
+                arg['key_urls'] = []
+        else:
+            arg['key_urls'] = []
+    
     pro_arguments = [arg for arg in arguments if arg['side'] == 'pro']
     con_arguments = [arg for arg in arguments if arg['side'] == 'con']
     
@@ -232,18 +242,28 @@ def migrate_add_validity_columns():
     except sqlite3.OperationalError:
         pass  # Column already exists
     
+    try:
+        cursor.execute("""
+            ALTER TABLE arguments 
+            ADD COLUMN key_urls TEXT
+        """)
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+    
     conn.commit()
     conn.close()
 
-def update_argument_validity(argument_id: int, validity_score: int, validity_reasoning: str):
+def update_argument_validity(argument_id: int, validity_score: int, validity_reasoning: str, key_urls: Optional[List[str]] = None):
     """Update argument with validity check results."""
     conn = get_db_connection()
     cursor = conn.cursor()
+    # Store key_urls as JSON string
+    key_urls_json = json.dumps(key_urls) if key_urls else None
     cursor.execute(
         """UPDATE arguments 
-           SET validity_score = ?, validity_reasoning = ?, validity_checked_at = ?
+           SET validity_score = ?, validity_reasoning = ?, validity_checked_at = ?, key_urls = ?
            WHERE id = ?""",
-        (validity_score, validity_reasoning, datetime.utcnow().isoformat(), argument_id)
+        (validity_score, validity_reasoning, datetime.utcnow().isoformat(), key_urls_json, argument_id)
     )
     conn.commit()
     conn.close()
@@ -287,4 +307,3 @@ def get_arguments_sorted_by_validity(topic_id: int, side: Optional[str] = None) 
     rows = cursor.fetchall()
     conn.close()
     return [dict(row) for row in rows]
-

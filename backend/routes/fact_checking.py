@@ -28,7 +28,8 @@ async def verify_argument(argument_id: int):
         database.update_argument_validity(
             argument_id=argument_id,
             validity_score=verdict.validity_score,
-            validity_reasoning=verdict.reasoning
+            validity_reasoning=verdict.reasoning,
+            key_urls=verdict.key_urls
         )
         
         return ValidityVerdictResponse(
@@ -76,7 +77,8 @@ async def verify_all_arguments(topic_id: int):
             database.update_argument_validity(
                 argument_id=arg['id'],
                 validity_score=verdict.validity_score,
-                validity_reasoning=verdict.reasoning
+                validity_reasoning=verdict.reasoning,
+                key_urls=verdict.key_urls
             )
             
             results["verified"] += 1
