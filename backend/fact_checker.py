@@ -27,7 +27,8 @@ CLAUDE_MODEL = "claude-3-haiku-20240307"
 
 class ValidityVerdict(BaseModel):
     """Pydantic model for fact-checking verdict."""
-    validity_score: int = Field(..., ge=1, le=5, description="Validity score from 1-5 stars")
+    is_relevant: bool = Field(..., description="Whether the argument is relevant to the debate topic")
+    validity_score: int = Field(..., ge=1, le=5, description="Validity score from 1-5 stars (only meaningful if is_relevant=True)")
     reasoning: str = Field(..., description="Explanation for the validity score")
     key_urls: List[str] = Field(..., description="Top 3 most relevant source URLs")
     source_count: int = Field(..., description="Number of sources found")
@@ -163,13 +164,22 @@ def analyze_and_score(original_claim: str, tavily_results: List[Dict], debate_qu
     
     prompt = f"""You are fact-checking an argument in a debate about: {debate_question}
 
-The argument is making claims related to this debate topic. Verify whether the factual claims supporting their position are true.
+FIRST, determine if this argument is RELEVANT to the debate topic.
 
-CRITICAL INSTRUCTIONS:
-- Opinions like "this is bad" or "you guys suck" are NOT factual claims and should result in LOW validity scores (1 star)
-- Only verify objective, factual claims that can be researched
-- If the argument contains no verifiable factual claims, give it a 1-star rating
-- If the claim is "NO VERIFIABLE FACTUAL CLAIMS", automatically assign 1 star
+An argument is IRRELEVANT if it:
+- Contains no factual claims (only opinions like "this sucks" or "you guys are wrong")
+- Makes claims unrelated to the debate topic
+- Is just insults, rhetoric, or emotional statements
+
+If IRRELEVANT:
+- Set is_relevant to false
+- Set validity_score to 1
+- Provide reasoning explaining why it's irrelevant
+
+If RELEVANT:
+- Set is_relevant to true
+- Verify whether the factual claims supporting their position are true
+- Score based on evidence quality (1-5 stars)
 
 ORIGINAL CLAIM:
 {original_claim}
@@ -177,13 +187,13 @@ ORIGINAL CLAIM:
 SEARCH RESULTS (pre-filtered for high-quality sources with relevance score > 0.5):
 {formatted_results}
 
-Analyze the evidence and assign a validity score from 1-5 stars based on these criteria:
+If RELEVANT, assign a validity score from 1-5 stars based on these criteria:
 
 - 5 stars: Fully supported by multiple high-quality sources (average relevance score > 0.8, at least 2-3 sources)
 - 4 stars: Mostly supported with good sources (average relevance score > 0.6, at least 2 sources)
 - 3 stars: Partially supported, mixed evidence (1-2 sources with moderate scores)
 - 2 stars: Limited support from few sources (only 1 source or low average score)
-- 1 star: No credible evidence, contradicted by sources, or contains no verifiable factual claims
+- 1 star: No credible evidence, contradicted by sources
 
 IMPORTANT: These sources have already been filtered for quality (relevance score > 0.5). 
 If very few sources pass this threshold, the validity score should be lower.
@@ -195,6 +205,7 @@ Number of high-quality sources found: {source_count}
 
 Return a JSON object with this exact structure. Make sure all strings are properly escaped:
 {{
+    "is_relevant": <boolean>,
     "validity_score": <1-5>,
     "reasoning": "<2-3 sentences explaining the score. Escape any quotes with backslash.>",
     "key_urls": ["<url1>", "<url2>", "<url3>"]
@@ -259,6 +270,11 @@ IMPORTANT:
         except json.JSONDecodeError:
             # If JSON parsing fails, extract fields manually using regex
             # This handles cases where Claude returns malformed JSON (e.g., unescaped quotes)
+            
+            # Extract is_relevant (boolean)
+            is_relevant_match = re.search(r'"is_relevant"\s*:\s*(true|false)', json_text, re.IGNORECASE)
+            is_relevant = is_relevant_match.group(1).lower() == 'true' if is_relevant_match else True  # Default to True if not found
+            
             validity_match = re.search(r'"validity_score"\s*:\s*(\d+)', json_text)
             
             validity_score = int(validity_match.group(1)) if validity_match else 3
@@ -308,12 +324,17 @@ IMPORTANT:
                 key_urls = [url.replace('\\"', '"').replace('\\\\', '\\') for url in url_matches if url][:3]
             
             result = {
+                'is_relevant': is_relevant,
                 'validity_score': validity_score,
                 'reasoning': reasoning,
                 'key_urls': key_urls
             }
         
         # Validate and create verdict
+        is_relevant = result.get('is_relevant', True)
+        if not isinstance(is_relevant, bool):
+            is_relevant = str(is_relevant).lower() in ('true', '1', 'yes')
+        
         validity_score = int(result.get('validity_score', 3))
         if validity_score < 1 or validity_score > 5:
             validity_score = 3  # Default to middle score if invalid
@@ -334,6 +355,7 @@ IMPORTANT:
             reasoning = reasoning.strip().strip('"').strip("'")
         
         verdict = ValidityVerdict(
+            is_relevant=is_relevant,
             validity_score=validity_score,
             reasoning=reasoning,
             key_urls=key_urls,
@@ -364,9 +386,10 @@ def verify_argument(title: str, content: str, debate_question: str) -> ValidityV
         # Step 1: Extract core claim
         claim = extract_core_claim(title, content, debate_question)
         
-        # If no verifiable claims found, return low validity score
+        # If no verifiable claims found, return irrelevant verdict
         if claim.upper() == "NO VERIFIABLE FACTUAL CLAIMS" or not claim.strip():
             return ValidityVerdict(
+                is_relevant=False,
                 validity_score=1,
                 reasoning=f"This argument contains no verifiable factual claims related to the debate topic: '{debate_question}'. It consists only of opinions, rhetoric, or emotional statements that cannot be fact-checked.",
                 key_urls=[],
@@ -386,9 +409,10 @@ def verify_argument(title: str, content: str, debate_question: str) -> ValidityV
         filtered_results.sort(key=lambda x: x.get('score', 0), reverse=True)
         top_sources = filtered_results[:3]
         
-        # If no sources pass the threshold, return low validity score
+        # If no sources pass the threshold, return low validity score (but still relevant if it has claims)
         if not top_sources:
             return ValidityVerdict(
+                is_relevant=True,  # Still relevant, just can't verify
                 validity_score=1,
                 reasoning="No high-quality sources found (all sources had relevance score ≤ 0.5). The claim cannot be verified with credible evidence.",
                 key_urls=[],
@@ -410,6 +434,7 @@ def verify_argument(title: str, content: str, debate_question: str) -> ValidityV
     except Exception as e:
         # Return a default verdict on error
         return ValidityVerdict(
+            is_relevant=True,  # Default to relevant on error
             validity_score=1,
             reasoning=f"Fact-checking failed: {str(e)}",
             key_urls=[],

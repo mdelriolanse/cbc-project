@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, Query
 from typing import Optional
 import database
+import fact_checker
 from models import ArgumentCreate, ArgumentCreateResponse, ArgumentResponse
 
 router = APIRouter(prefix="/api/topics/{topic_id}/arguments", tags=["arguments"])
@@ -24,6 +25,25 @@ async def create_argument(topic_id: int, argument: ArgumentCreate):
     # a single pro OR con and grow naturally.
     
     try:
+        # Run fact-checker to verify relevance before saving
+        verdict = fact_checker.verify_argument(
+            title=argument.title,
+            content=argument.content,
+            debate_question=topic['question']
+        )
+        
+        # Reject irrelevant arguments
+        if not verdict.is_relevant:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "Argument not relevant",
+                    "reasoning": verdict.reasoning,
+                    "message": f"This argument was rejected as not relevant to the debate topic: '{topic['question']}'. Please submit an argument with factual claims related to the debate."
+                }
+            )
+        
+        # Create the argument
         argument_id = database.create_argument(
             topic_id=topic_id,
             side=argument.side,
@@ -32,7 +52,19 @@ async def create_argument(topic_id: int, argument: ArgumentCreate):
             author=argument.author,
             sources=argument.sources
         )
+        
+        # Save validity score immediately
+        database.update_argument_validity(
+            argument_id=argument_id,
+            validity_score=verdict.validity_score,
+            validity_reasoning=verdict.reasoning,
+            key_urls=verdict.key_urls
+        )
+        
         return ArgumentCreateResponse(argument_id=argument_id)
+    except HTTPException:
+        # Re-raise HTTP exceptions (like 400 for irrelevant arguments)
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create argument: {str(e)}")
 
