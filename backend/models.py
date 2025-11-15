@@ -68,3 +68,12 @@ class SummaryResponse(BaseModel):
     consensus_view: str
     timeline_view: List[dict]
 
+
+class ArgumentMatch(BaseModel):
+    pro_id: int
+    con_id: int
+    reason: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+

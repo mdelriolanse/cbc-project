@@ -90,3 +90,85 @@ Return JSON only: {{"overall_summary": "...", "consensus_view": "...", "timeline
     except Exception as e:
         raise RuntimeError(f"Claude API error: {e}")
 
+
+def evaluate_argument_pairs(question: str, pro_arguments: List[Dict], con_arguments: List[Dict]) -> List[Dict]:
+    """
+    Evaluate pro and con arguments and return pairs that directly rebut each other.
+
+    Returns a list of objects: {"pro_id": int, "con_id": int, "reason": str}
+    """
+    # Prepare formatted text with ids so Claude can reference them
+    def fmt_args(args, side_label):
+        if not args:
+            return "None"
+        lines = []
+        for a in args:
+            # Expect each arg to include 'id', 'title', 'content'
+            lines.append(f"ID: {a.get('id')} | Title: {a.get('title')} | Content: {a.get('content')}")
+        return "\n\n".join(lines)
+
+    pro_text = fmt_args(pro_arguments, 'PRO')
+    con_text = fmt_args(con_arguments, 'CON')
+
+    prompt = f"""You are given a debate question and two lists of arguments, PRO and CON. Each argument is labeled with an ID.
+
+Question: {question}
+
+PRO arguments:
+{pro_text}
+
+CON arguments:
+{con_text}
+
+Task: For each PRO argument, identify any CON arguments that directly rebut or address the same claim (and vice versa). Return a JSON array of objects with the fields:
+
+  - pro_id: the ID of the pro argument (or null if the match is from a con perspective)
+  - con_id: the ID of the con argument (or null if the match is from a pro perspective)
+  - reason: one-sentence explanation of why these two arguments are linked (the claim they conflict about)
+
+Only include pairs where the arguments clearly address the same point or directly contradict one another. Do not invent arguments. Return JSON only, e.g.:
+
+[{{"pro_id": 12, "con_id": 34, "reason": "Both discuss data collection practices; con argues it's not harmful, pro argues privacy risk."}}]
+"""
+
+    try:
+        message = client.messages.create(
+            model=MODEL,
+            max_tokens=2048,
+            messages=[{"role": "user", "content": prompt}]
+        )
+
+        response_text = message.content[0].text.strip()
+
+        # Strip code fences if present
+        if "```json" in response_text:
+            response_text = response_text.split("```json")[1].split("```")[0].strip()
+        elif "```" in response_text:
+            response_text = response_text.split("```")[1].split("```")[0].strip()
+
+        result = json.loads(response_text)
+
+        # Validate structure
+        if not isinstance(result, list):
+            raise ValueError("Expected a JSON array of matches")
+
+        # Normalize entries to have pro_id and con_id
+        normalized = []
+        for item in result:
+            if not isinstance(item, dict):
+                continue
+            pro_id = item.get('pro_id')
+            con_id = item.get('con_id')
+            reason = item.get('reason') or item.get('explanation') or None
+            if pro_id is None or con_id is None:
+                # skip incomplete matches
+                continue
+            normalized.append({'pro_id': int(pro_id), 'con_id': int(con_id), 'reason': reason})
+
+        return normalized
+
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Failed to parse JSON from Claude response: {e}")
+    except Exception as e:
+        raise RuntimeError(f"Claude API error: {e}")
+

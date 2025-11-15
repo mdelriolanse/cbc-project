@@ -66,6 +66,12 @@ export interface SummaryResponse {
   timeline_view: Array<{ period: string; description: string }>;
 }
 
+export interface ArgumentMatch {
+  pro_id: number;
+  con_id: number;
+  reason?: string | null;
+}
+
 // Error handling helper
 async function handleResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
@@ -168,5 +174,16 @@ export async function generateSummary(topicId: number): Promise<SummaryResponse>
     },
   });
   return handleResponse<SummaryResponse>(response);
+}
+
+/**
+ * Get argument match pairs (pro <-> con) as evaluated by Claude
+ */
+export async function getArgumentMatches(topicId: number): Promise<ArgumentMatch[]> {
+  const response = await fetch(`${API_BASE_URL}/api/topics/${topicId}/match-arguments`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  });
+  return handleResponse<ArgumentMatch[]>(response);
 }
 
