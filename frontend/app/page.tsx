@@ -299,7 +299,11 @@ export default function Home() {
     } catch (err: any) {
       // Check if it's a 400 error (irrelevant argument rejection)
       if (err?.response?.status === 400 || err?.status === 400) {
-        const errorData = err?.response?.data?.detail || err?.detail || {}
+        // Extract error detail - it might be nested in response.data.detail or directly in detail
+        const errorDetail = err?.response?.data?.detail || err?.detail || {}
+        // Handle case where detail might be a string or an object
+        const errorData = typeof errorDetail === 'object' ? errorDetail : { message: errorDetail }
+        
         setRejectionError({
           message: errorData.message || errorData.error || 'This argument was rejected as not relevant to the debate topic.',
           reasoning: errorData.reasoning || 'The argument contains no verifiable factual claims related to the debate topic.'

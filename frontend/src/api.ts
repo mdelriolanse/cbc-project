@@ -3,7 +3,7 @@
  * Base URL: http://localhost:8000
  */
 
-const API_BASE_URL = 'http://localhost:8000';
+const API_BASE_URL = 'http://localhost:8080';
 
 // Types matching backend models
 export interface TopicCreate {
@@ -91,10 +91,13 @@ export interface ArgumentMatch {
 async function handleResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({ detail: response.statusText }));
-    const error: any = new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+    // Extract the detail object - it might be nested or flat
+    const detail = errorData.detail || errorData;
+    const errorMessage = typeof detail === 'string' ? detail : (detail.message || detail.error || `HTTP error! status: ${response.status}`);
+    const error: any = new Error(errorMessage);
     error.status = response.status;
-    error.response = { data: { detail: errorData }, status: response.status };
-    error.detail = errorData;
+    error.response = { data: { detail: detail }, status: response.status };
+    error.detail = detail; // Store the full detail object for easy access
     throw error;
   }
   return response.json();

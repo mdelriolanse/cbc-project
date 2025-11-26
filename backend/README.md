@@ -9,17 +9,25 @@ A FastAPI backend for a debate platform that allows users to submit arguments on
 pip install -r requirements.txt
 ```
 
-2. Set environment variable for Claude API:
-```bash
-export ANTHROPIC_API_KEY=your_api_key_here
-```
+2. Set up environment variables:
+   - Copy `.env.example` to `.env`: `cp .env.example .env`
+   - Edit `.env` and update with your actual database credentials and API keys:
+     ```
+     DB_HOST=localhost
+     DB_PORT=5432
+     DB_NAME=debate_platform
+     DB_USER=postgres
+     DB_PASSWORD=your_password
+     ANTHROPIC_API_KEY=your_api_key_here
+     ```
+   
+   **Note:** The `.env` file is gitignored and contains your actual credentials. The `.env.example` file contains sample/placeholder values.
 
-On Windows PowerShell:
-```powershell
-$env:ANTHROPIC_API_KEY="your_api_key_here"
-```
+3. Set up PostgreSQL database:
+   - Install PostgreSQL if not already installed
+   - Create a database: `CREATE DATABASE debate_platform;` (or use the name from your `.env` file)
 
-3. Run the server:
+4. Run the server:
 ```bash
 uvicorn main:app --reload
 ```
@@ -130,12 +138,19 @@ Generate AI summary using Claude. Requires at least one pro and one con argument
 
 ## Database
 
-SQLite database file: `debate_platform.db`
+PostgreSQL database. The database connection is configured via environment variables:
+- `DB_HOST` (default: localhost)
+- `DB_PORT` (default: 5432)
+- `DB_NAME` (default: debate_platform)
+- `DB_USER` (default: postgres)
+- `DB_PASSWORD` (default: postgres)
+
+The database tables are automatically created when the application starts via `init_db()`.
 
 ### Schema
 
 **topics:**
-- id (INTEGER PRIMARY KEY)
+- id (SERIAL PRIMARY KEY)
 - question (TEXT)
 - created_by (TEXT)
 - created_at (TIMESTAMP)
@@ -144,13 +159,26 @@ SQLite database file: `debate_platform.db`
 - timeline_view (TEXT/JSON, nullable)
 
 **arguments:**
-- id (INTEGER PRIMARY KEY)
+- id (SERIAL PRIMARY KEY)
 - topic_id (INTEGER, FOREIGN KEY)
 - side (TEXT: 'pro' or 'con')
 - title (TEXT)
 - content (TEXT)
 - sources (TEXT, nullable)
 - author (TEXT)
+- created_at (TIMESTAMP)
+- validity_score (INTEGER, nullable)
+- validity_reasoning (TEXT, nullable)
+- validity_checked_at (TIMESTAMP, nullable)
+- key_urls (TEXT/JSON, nullable)
+- votes (INTEGER, default: 0)
+
+**argument_matches:**
+- id (SERIAL PRIMARY KEY)
+- topic_id (INTEGER, FOREIGN KEY)
+- pro_id (INTEGER)
+- con_id (INTEGER)
+- reason (TEXT, nullable)
 - created_at (TIMESTAMP)
 
 ## Error Handling

@@ -1,0 +1,53 @@
+version: '3.8'
+services:
+  backend:
+    build: .
+    develop:
+      watch:
+        - action: sync
+          path: ./backend
+          target: /debately-backend
+          ignore:
+            - .venv/
+            - __pycache__/
+            - .pytest_cache/
+            - .ruff_cache/
+            - .mypy_cache/
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    environment:
+      # Override DB_HOST to use Docker service name for containerized DB
+      - DB_HOST=db
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - .:/debately-backend
+
+  db:
+    image: postgres:15
+    env_file:
+      - .env
+    environment:
+      - POSTGRES_USER=${DB_USER:-postgres}
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-postgres}
+      - POSTGRES_DB=${DB_NAME:-debate_platform}
+    ports:
+      # Expose port for local access if needed (optional for production)
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      # Named volume for data persistence - survives container restarts
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    # Optional: Add restart policy for production
+    restart: unless-stopped
+
+volumes:
+  # Named volume persists data even if containers are removed
+  postgres_data:

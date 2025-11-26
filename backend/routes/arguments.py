@@ -3,19 +3,27 @@ from typing import Optional
 import database
 import fact_checker
 from models import ArgumentCreate, ArgumentCreateResponse, ArgumentResponse
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/topics/{topic_id}/arguments", tags=["arguments"])
 
 @router.post("", response_model=ArgumentCreateResponse, status_code=201)
 async def create_argument(topic_id: int, argument: ArgumentCreate):
     """Create a new argument for a topic."""
+    logger.info(f"Creating argument for topic {topic_id}, side: {argument.side}")
+    logger.info(f"Argument data: title={argument.title[:50]}..., author={argument.author}")
+    
     # Validate topic exists
     topic = database.get_topic(topic_id)
     if not topic:
+        logger.error(f"Topic {topic_id} not found")
         raise HTTPException(status_code=404, detail=f"Topic with id {topic_id} not found")
     
     # Validate side
     if argument.side not in ['pro', 'con']:
+        logger.error(f"Invalid side: {argument.side}")
         raise HTTPException(status_code=400, detail="side must be either 'pro' or 'con'")
     
     # Validation: Topic must have at least 1 pro AND 1 con total
@@ -34,14 +42,13 @@ async def create_argument(topic_id: int, argument: ArgumentCreate):
         
         # Reject irrelevant arguments
         if not verdict.is_relevant:
-            raise HTTPException(
-                status_code=400,
-                detail={
-                    "error": "Argument not relevant",
-                    "reasoning": verdict.reasoning,
-                    "message": f"This argument was rejected as not relevant to the debate topic: '{topic['question']}'. Please submit an argument with factual claims related to the debate."
-                }
-            )
+            error_detail = {
+                "error": "Argument not relevant",
+                "reasoning": verdict.reasoning,
+                "message": f"This argument was rejected as not relevant to the debate topic: '{topic['question']}'. Please submit an argument with factual claims related to the debate."
+            }
+            logger.warning(f"Argument rejected as not relevant: {error_detail}")
+            raise HTTPException(status_code=400, detail=error_detail)
         
         # Create the argument
         argument_id = database.create_argument(
@@ -62,10 +69,12 @@ async def create_argument(topic_id: int, argument: ArgumentCreate):
         )
         
         return ArgumentCreateResponse(argument_id=argument_id)
-    except HTTPException:
-        # Re-raise HTTP exceptions (like 400 for irrelevant arguments)
+    except HTTPException as e:
+        # Log and re-raise HTTP exceptions (like 400 for irrelevant arguments)
+        logger.error(f"HTTPException in create_argument: status={e.status_code}, detail={e.detail}")
         raise
     except Exception as e:
+        logger.error(f"Exception in create_argument: {type(e).__name__}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to create argument: {str(e)}")
 
 
