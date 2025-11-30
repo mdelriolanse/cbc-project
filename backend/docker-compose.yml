@@ -1,11 +1,10 @@
-version: '3.8'
 services:
   backend:
     build: .
     develop:
       watch:
         - action: sync
-          path: ./backend
+          path: .
           target: /debately-backend
           ignore:
             - .venv/
@@ -13,6 +12,7 @@ services:
             - .pytest_cache/
             - .ruff_cache/
             - .mypy_cache/
+            - debate_platform.db
     ports:
       - "8080:8080"
     env_file:

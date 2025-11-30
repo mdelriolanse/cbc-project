@@ -23,7 +23,7 @@ database.migrate_add_validity_columns()
 database.migrate_add_votes_column()
 
 # Create FastAPI app
-app = FastAPI(title="Debate Platform API", version="1.0.0")
+app = FastAPI(title="Debately API", version="1.0.0")
 
 # Add exception handler for validation errors
 @app.exception_handler(RequestValidationError)

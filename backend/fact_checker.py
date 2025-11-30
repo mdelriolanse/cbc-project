@@ -1,13 +1,16 @@
 import os
 import json
 import re
+from pathlib import Path
 from typing import Dict, List, Optional
 from anthropic import Anthropic
 from tavily import TavilyClient
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 
-load_dotenv()
+# Load .env file from the backend directory (works in both local and Docker)
+env_path = Path(__file__).parent / '.env'
+load_dotenv(dotenv_path=env_path)
 
 # Initialize API clients
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")

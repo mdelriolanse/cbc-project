@@ -10,6 +10,9 @@ router = APIRouter(prefix="/api/topics", tags=["topics"])
 async def create_topic(topic: TopicCreate):
     """Create a new debate topic."""
     try:
+
+        topic.question
+
         topic_data = database.create_topic(
             question=topic.question,
             created_by=topic.created_by
